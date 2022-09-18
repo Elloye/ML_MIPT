@@ -1,3 +1,2 @@
-# Machine Learning at MIPT
+# It's still Empty
 
-That's My Ninja Way
