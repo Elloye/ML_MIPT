@@ -1,1 +1,2 @@
-# ML_MIPT
+# Machine Learning at MIPT
+
