@@ -30,9 +30,7 @@ class LossAndDerivatives:
             on the selected dataset.
 
         Comment: If Y is two-dimentional, average the error over both dimentions.
-        """
-
-        # YOUR CODE HERE    
+        """    
         return np.mean(np.absolute(X.dot(w) - Y))
 
     @staticmethod
@@ -45,8 +43,6 @@ class LossAndDerivatives:
 
         Computes the L2 regularization term for the weight matrix w.
         """
-        
-        # YOUR CODE HERE
         return np.sum(np.square(w))
 
     @staticmethod
@@ -59,8 +55,6 @@ class LossAndDerivatives:
         
         Computes the L1 regularization term for the weight matrix w.
         """
-
-        # YOUR CODE HERE
         return np.sum(np.absolute(w))
 
     @staticmethod
@@ -85,8 +79,6 @@ class LossAndDerivatives:
         Please mention, that in case `target_dimentionality` > 1 the error is averaged along this
         dimension as well, so you need to consider that fact in derivative implementation.
         """
-
-        # YOUR CODE HERE
         return 2 * np.dot(X.T, X.dot(w) - Y) / Y.size
 
     @staticmethod
@@ -104,8 +96,6 @@ class LossAndDerivatives:
         Please mention, that in case `target_dimentionality` > 1 the error is averaged along this
         dimension as well, so you need to consider that fact in derivative implementation.
         """
-
-        # YOUR CODE HERE
         return np.dot(X.T, np.sign(X.dot(w) - Y)) / Y.size
 
     @staticmethod
@@ -117,8 +107,6 @@ class LossAndDerivatives:
 
         Computes the L2 regularization term derivative w.r.t. the weight matrix w.
         """
-
-        # YOUR CODE HERE
         return 2 * w
 
     @staticmethod
@@ -131,8 +119,6 @@ class LossAndDerivatives:
 
         Computes the L1 regularization term derivative w.r.t. the weight matrix w.
         """
-
-        # YOUR CODE HERE
         return np.sign(w)
 
     @staticmethod
