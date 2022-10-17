@@ -74,9 +74,7 @@ class KNearestNeighbor:
                 # training point, and store the result in dists[i, j]. You should   #
                 # not use a loop over dimension, nor use np.linalg.norm().          #
                 #####################################################################
-                # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
                 dists[i, j] = np.sqrt(np.sum(np.square((X[i] - self.X_train[j]))))
-                # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         return dists
 
     def compute_distances_one_loop(self, X):
@@ -96,10 +94,8 @@ class KNearestNeighbor:
             # points, and store the result in dists[i, :].                        #
             # Do not use np.linalg.norm().                                        #
             #######################################################################
-            # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
             dists[i, :] = np.sqrt(np.sum(np.square((X[i] - self.X_train)), axis=1))
-            # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-        return dists
+    return dists
 
     def compute_distances_no_loops(self, X):
         """
@@ -124,9 +120,7 @@ class KNearestNeighbor:
         # HINT: Try to formulate the l2 distance using matrix multiplication    #
         #       and two broadcast sums.                                         #
         #########################################################################
-        # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         dists = np.sqrt(np.sum(np.square(X), axis=1).reshape(-1, 1) - 2 * np.dot(X, self.X_train.T) + np.sum(np.square(self.X_train), axis=1).reshape(1, -1))
-        # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         return dists
 
     def predict_labels(self, dists, k=1):
@@ -165,8 +159,5 @@ class KNearestNeighbor:
             # Store this label in y_pred[i]. Break ties by choosing the smaller     #
             # label.                                                                #
             #########################################################################
-            # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
             y_pred[i] = np.bincount(closest_y).argmax()
-            # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
         return y_pred
