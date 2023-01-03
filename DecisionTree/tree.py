@@ -2,35 +2,101 @@ import numpy as np
 from sklearn.base import BaseEstimator
 
 
-def gini(y):
-    p = np.bincount(y.flatten().astype('int')) / len(y)
-    return 1 - np.sum(p ** 2)
-
-def entropy(y):
+def entropy(y):  
+    """
+    Computes entropy of the provided distribution. Use log(value + eps) for numerical stability
+    
+    Parameters
+    ----------
+    y : np.array of type float with shape (n_objects, n_classes)
+        One-hot representation of class labels for corresponding subset
+    
+    Returns
+    -------
+    float
+        Entropy of the provided subset
+    """
     EPS = 0.0005
-    p = np.bincount(y.flatten().astype('int')) / len(y)
-    return - np.sum(p * np.log2(p + EPS))
 
+    return -(y.mean(axis=0) * np.log2(y.mean(axis=0) + EPS)).sum()
+    
+    return 0.
+    
+def gini(y):
+    """
+    Computes the Gini impurity of the provided distribution
+    
+    Parameters
+    ----------
+    y : np.array of type float with shape (n_objects, n_classes)
+        One-hot representation of class labels for corresponding subset
+    
+    Returns
+    -------
+    float
+        Gini impurity of the provided subset
+    """
+    
+    return 1 - (y.mean(axis=0) ** 2).sum()
+    
 def variance(y):
-    return np.mean((y - np.mean(y)) ** 2)
+    """
+    Computes the variance the provided target values subset
+    
+    Parameters
+    ----------
+    y : np.array of type float with shape (n_objects, 1)
+        Target values vector
+    
+    Returns
+    -------
+    float
+        Variance of the provided target vector
+    """
+    
+    return np.var(y)
 
 def mad_median(y):
-    return np.mean(np.abs(y - np.median(y)))
+    """
+    Computes the mean absolute deviation from the median in the
+    provided target values subset
+    
+    Parameters
+    ----------
+    y : np.array of type float with shape (n_objects, 1)
+        Target values vector
+    
+    Returns
+    -------
+    float
+        Mean absolute deviation from the median in the provided vector
+    """
+    
+    return (np.abs(y - np.mean(y))).mean()
+
+
+def one_hot_encode(n_classes, y):
+    y_one_hot = np.zeros((len(y), n_classes), dtype=float)
+    y_one_hot[np.arange(len(y)), y.astype(int)[:, 0]] = 1.
+    return y_one_hot
+
+
+def one_hot_decode(y_one_hot):
+    return y_one_hot.argmax(axis=1)[:, None]
 
 
 class Node:
-    def __init__(self, feature=None, threshold=None, left=None, right=None, *, value=None, proba=None):
-        self.feature = feature
-        self.threshold = threshold
-        self.left = left
-        self.right = right
-        self.value = value
+    """
+    This class is provided "as is" and it is not mandatory to it use in your code.
+    """
+    def __init__(self, feature_index, threshold, proba=0):
+        self.feature_index = feature_index
+        self.value = threshold
         self.proba = proba
-    
-    def is_leaf(self):
-        return self.value is not None
-
-
+        self.left_child = None
+        self.right_child = None
+        
+        
 class DecisionTree(BaseEstimator):
     all_criterions = {
         'gini': (gini, True), # (criterion, classification flag)
@@ -39,99 +105,229 @@ class DecisionTree(BaseEstimator):
         'mad_median': (mad_median, False)
     }
 
-    def __init__(self, max_depth=100, min_samples_split=2, criterion_name = 'gini'):
+    def __init__(self, n_classes=None, max_depth=np.inf, min_samples_split=2, 
+                 criterion_name='gini', debug=False):
+
+        assert criterion_name in self.all_criterions.keys(), 'Criterion name must be on of the following: {}'.format(self.all_criterions.keys())
+        
+        self.n_classes = n_classes
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.criterion_name = criterion_name
-        self.root = None
+
+        self.depth = 0
+        self.root = None # Use the Node class to initialize it later
+        self.debug = debug
+
+        
+        
+    def make_split(self, feature_index, threshold, X_subset, y_subset):
+        """
+        Makes split of the provided data subset and target values using provided feature and threshold
+        
+        Parameters
+        ----------
+        feature_index : int
+            Index of feature to make split with
+        threshold : float
+            Threshold value to perform split
+        X_subset : np.array of type float with shape (n_objects, n_features)
+            Feature matrix representing the selected subset
+        y_subset : np.array of type float with shape (n_objects, n_classes) in classification 
+                   (n_objects, 1) in regression 
+            One-hot representation of class labels for corresponding subset
+        
+        Returns
+        -------
+        (X_left, y_left) : tuple of np.arrays of same type as input X_subset and y_subset
+            Part of the providev subset where selected feature x^j < threshold
+        (X_right, y_right) : tuple of np.arrays of same type as input X_subset and y_subset
+            Part of the providev subset where selected feature x^j >= threshold
+        """
+
+        X_left, X_right = X_subset[X_subset[:, feature_index] < threshold], X_subset[X_subset[:, feature_index] >= threshold]
+        y_left, y_right = y_subset[X_subset[:, feature_index] < threshold], y_subset[X_subset[:, feature_index] >= threshold]
+
+        return (X_left, y_left), (X_right, y_right)
     
-    def is_finished(self, depth):
-        if (depth >= self.max_depth
-            or self.n_class_labels == 1
-            or self.n_samples < self.min_samples_split):
-            return True
-        return False
-
-    def create_split(self, X, thresh):
-        left_idx = np.argwhere(X < thresh).flatten()
-        right_idx = np.argwhere(X >= thresh).flatten()
-        return left_idx, right_idx
-
-    def information_gain(self, X, y, thresh):
-        H = self.all_criterions[self.criterion_name][0]
-        parent_loss = H(y)
-        left_idx, right_idx = self.create_split(X, thresh)
-        n, n_left, n_right = len(y), len(left_idx), len(right_idx)
-
-        if n_left == 0 or n_right == 0: 
-            return 0
+    def make_split_only_y(self, feature_index, threshold, X_subset, y_subset):
+        """
+        Split only target values into two subsets with specified feature and threshold
         
-        child_loss = (n_left / n) * H(y[left_idx]) + (n_right / n) * H(y[right_idx])
-        return parent_loss - child_loss
+        Parameters
+        ----------
+        feature_index : int
+            Index of feature to make split with
+        threshold : float
+            Threshold value to perform split
+        X_subset : np.array of type float with shape (n_objects, n_features)
+            Feature matrix representing the selected subset
+        y_subset : np.array of type float with shape (n_objects, n_classes) in classification 
+                   (n_objects, 1) in regression 
+            One-hot representation of class labels for corresponding subset
+        
+        Returns
+        -------
+        y_left : np.array of type float with shape (n_objects_left, n_classes) in classification 
+                   (n_objects, 1) in regression 
+            Part of the provided subset where selected feature x^j < threshold
+        y_right : np.array of type float with shape (n_objects_right, n_classes) in classification 
+                   (n_objects, 1) in regression 
+            Part of the provided subset where selected feature x^j >= threshold
+        """
+        
+        y_left, y_right = y_subset[X_subset[:, feature_index] < threshold], y_subset[X_subset[:, feature_index] >= threshold]
+        
+        return y_left, y_right
 
-    def best_split(self, X, y): 
-        split = {'score':- 1, 'feat': None, 'thresh': None}
+    def choose_best_split(self, X_subset, y_subset):
+        """
+        Greedily select the best feature and best threshold w.r.t. selected criterion
+        
+        Parameters
+        ----------
+        X_subset : np.array of type float with shape (n_objects, n_features)
+            Feature matrix representing the selected subset
+        y_subset : np.array of type float with shape (n_objects, n_classes) in classification 
+                   (n_objects, 1) in regression 
+            One-hot representation of class labels or target values for corresponding subset
+        
+        Returns
+        -------
+        feature_index : int
+            Index of feature to make split with
+        threshold : float
+            Threshold value to perform split
+        """
+        feature_index = 0 
+        threshold = .0
+        Q_min = np.inf
 
-        for feat in range(X.shape[1]):
-            thresholds = np.unique(X[:, feat])
-            for thresh in thresholds:
-                score = self.information_gain(X[:, feat], y, thresh)
+        for i in range(X_subset.shape[1]):
+            for j in np.unique(X_subset[:, i]):
+                y_left, y_right = self.make_split_only_y(i, j, X_subset, y_subset)
+                Q = (y_left.shape[0] / X_subset.shape[0] * self.all_criterions[self.criterion_name][0](y_left) + 
+                    y_right.shape[0] / X_subset.shape[0] * self.all_criterions[self.criterion_name][0](y_right))
+                if Q < Q_min:
+                    feature_index = i
+                    threshold = j
+                    Q_min = Q
 
-                if score > split['score']:
-                    split['score'] = score
-                    split['feat'] = feat
-                    split['thresh'] = thresh
-
-        return split['feat'], split['thresh']
+        return feature_index, threshold
     
-    def build_tree(self, X, y, depth=0):
-        self.n_samples, self.n_features = X.shape
-        self.n_class_labels = len(np.unique(y))
+    def make_tree(self, X_subset, y_subset, depth):
+        """
+        Recursively builds the tree
+        
+        Parameters
+        ----------
+        X_subset : np.array of type float with shape (n_objects, n_features)
+            Feature matrix representing the selected subset
+        y_subset : np.array of type float with shape (n_objects, n_classes) in classification 
+                   (n_objects, 1) in regression 
+            One-hot representation of class labels or target values for corresponding subset
+        
+        Returns
+        -------
+        root_node : Node class instance
+            Node of the root of the fitted tree
+        """
 
-        # stopping criteria
-        if self.is_finished(depth):
-            if self.all_criterions[self.criterion_name][1]:
-                leaf_value = np.argmax(np.bincount(y.flatten().astype('int')))
-                
-                leaf_probas = np.zeros(self.n_classes)
-                probas = np.bincount(y.flatten().astype('int')) / len(y)
-                idx = probas.nonzero()
-                leaf_probas[idx] = probas[idx]
-                
-                return Node(value=leaf_value, proba=leaf_probas)
-            
-            if self.criterion_name == 'variance':
-                leaf_value = np.mean(y)
-            
-            elif self.criterion_name == 'mad_median':
-                leaf_value = np.median(y)                            
-            
-            return Node(value=leaf_value)    
-        
-        best_feat, best_thresh = self.best_split(X, y)
+        if X_subset.shape[0] > self.min_samples_split and depth < self.max_depth:
+            new_node = Node(*self.choose_best_split(X_subset, y_subset))
+            (X_left, y_left), (X_right, y_right) = self.make_split(new_node.feature_index, new_node.value, X_subset, y_subset)
+            new_node.left_child, new_node.right_child = self.make_tree(X_left, y_left, depth + 1), self.make_tree(X_right, y_right, depth + 1)
+            return new_node
+        else:
+            return y_subset.mean(axis=0)
 
-        left_idx, right_idx = self.create_split(X[:, best_feat], best_thresh)
-        left_child = self.build_tree(X[left_idx, :], y[left_idx], depth + 1)
-        right_child = self.build_tree(X[right_idx, :], y[right_idx], depth + 1)
         
-        return Node(best_feat, best_thresh, left_child, right_child)        
-    
-    def traverse_tree(self, x, node):
-        if node.is_leaf():
-            return node.value, node.proba
         
-        if x[node.feature] <= node.threshold:
-            return self.traverse_tree(x, node.left)
-        return self.traverse_tree(x, node.right)
-     
     def fit(self, X, y):
-        self.n_classes = len(np.unique(y))       
-        self.root = self.build_tree(X, y) 
+        """
+        Fit the model from scratch using the provided data
+        
+        Parameters
+        ----------
+        X : np.array of type float with shape (n_objects, n_features)
+            Feature matrix representing the data to train on
+        y : np.array of type int with shape (n_objects, 1) in classification 
+                   of type float with shape (n_objects, 1) in regression 
+            Column vector of class labels in classification or target values in regression
+        
+        """
+        assert len(y.shape) == 2 and len(y) == len(X), 'Wrong y shape'
+        self.criterion, self.classification = self.all_criterions[self.criterion_name]
+        if self.classification:
+            if self.n_classes is None:
+                self.n_classes = len(np.unique(y))
+            y = one_hot_encode(self.n_classes, y)
 
+        self.root = self.make_tree(X, y, 0)
+    
     def predict(self, X):
-        pred = [self.traverse_tree(x, self.root)[0] for x in X]
-        return np.array(pred)
+        """
+        Predict the target value or class label  the model from scratch using the provided data
+        
+        Parameters
+        ----------
+        X : np.array of type float with shape (n_objects, n_features)
+            Feature matrix representing the data the predictions should be provided for
+        Returns
+        -------
+        y_predicted : np.array of type int with shape (n_objects, 1) in classification 
+                   (n_objects, 1) in regression 
+            Column vector of class labels in classification or target values in regression
+        
+        """
+        y_predicted = np.zeros(X.shape[0])
 
+        for i in range(X.shape[0]):
+                current_node = self.root
+
+                while type(current_node) is Node:
+                    if X[i, current_node.feature_index] < current_node.value:
+                        current_node = current_node.left_child
+                    else:
+                        current_node = current_node.right_child
+
+                if self.all_criterions[self.criterion_name][1]:
+                    y_predicted[i] = np.argmax(current_node)
+                else:
+                    y_predicted[i] = current_node
+
+        return y_predicted
+        
     def predict_proba(self, X):
-        pred_proba = [self.traverse_tree(x, self.root)[1] for x in X]
-        return np.array(pred_proba)
+        """
+        Only for classification
+        Predict the class probabilities using the provided data
+        
+        Parameters
+        ----------
+        X : np.array of type float with shape (n_objects, n_features)
+            Feature matrix representing the data the predictions should be provided for
+        Returns
+        -------
+        y_predicted_probs : np.array of type float with shape (n_objects, n_classes)
+            Probabilities of each class for the provided objects
+        
+        """
+        assert self.classification, 'Available only for classification problem'
+
+        y_predicted_probs = np.zeros((X.shape[0], self.n_classes))
+
+        for i in range(X.shape[0]):
+                current_node = self.root
+
+                while type(current_node) is Node:
+                    if X[i, current_node.feature_index] < current_node.value:
+                        current_node = current_node.left_child
+                    else:
+                        current_node = current_node.right_child
+
+                y_predicted_probs[i] = current_node
+        
+        return y_predicted_probs
+
+
